@@ -1,0 +1,6 @@
+[local-citrix-repo]
+name=Citrix Local Respository
+baseurl=file:///var/local/citrix-repo
+enabled=1
+gpgcheck=1
+metadata_expire=60

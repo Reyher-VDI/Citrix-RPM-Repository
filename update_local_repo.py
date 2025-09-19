@@ -5,6 +5,7 @@ import urllib.error
 import threading
 import logging
 import hashlib
+import shutil
 import time
 import json
 import os
@@ -157,5 +158,18 @@ for rpm_file in ["/temp/packages/ctxusb.rpm", "/temp/packages/ICAClient.rpm"]:
 
 download_file("https://github.com/Reyher-VDI/Citrix-RPM-Repository/releases/download/TEST/ctxusb.rpm", "/temp/packages/ctxusb.rpm", expected_hashes)
 download_file("https://github.com/Reyher-VDI/Citrix-RPM-Repository/releases/download/TEST/ICAClient.rpm", "/temp/packages/ICAClient.rpm", expected_hashes)
+
+os.makedirs("/var/local/citrix-repo")
+
+logging.info("Copying ctxusb.rpm...")
+shutil.copyfile("/temp/packages/ctxusb.rpm", "/var/local/citrix-repo")
+logging.info("Finished copying ICAClient.rpm")
+logging.info("Copying ICAClient.rpm...")
+shutil.copyfile("/temp/packages/ICAClient.rpm", "/var/local/citrix-repo")
+logging.info("Finished copying ICAClient.rpm")
+
+os.system("createrepo_c /var/local/citrix-repo")
+
+shutil.copyfile("./local-citrix-repo.repo", "/etc/yum.repos.d/")
 
 print("All files downloaded and verified successfully!")
