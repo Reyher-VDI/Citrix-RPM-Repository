@@ -1,14 +1,15 @@
-from concurrent.futures import ThreadPoolExecutor
-from tqdm import tqdm
 import urllib.request
+import os
 import urllib.error
 import threading
+from concurrent.futures import ThreadPoolExecutor
+from tqdm import tqdm
 import logging
-import hashlib
-import shutil
 import time
+import hashlib
 import json
-import os
+import datetime
+import shutil
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - Thread %(threadName)s - %(message)s')
 
@@ -144,32 +145,92 @@ def download_file(url, save_path, expected_hashes, num_threads=4):
 		logging.error(f"An unexpected error occurred: {e}")
 		raise
 
+def is_newer_release(repo_owner, repo_name, release_tag, last_release_file="/temp/packages/last_release.json"):
+	"""Check if the current release is newer than the last downloaded one."""
+	try:
+		api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/tags/{release_tag}"
+		with urllib.request.urlopen(api_url, timeout=30) as response:
+			release_info = json.loads(response.read().decode())
+		current_published_at = release_info.get('published_at', '')
+		if not current_published_at:
+			logging.error("No published_at timestamp found in release info")
+			raise ValueError("Invalid release data")
+
+		current_time = datetime.datetime.fromisoformat(current_published_at.replace('Z', '+00:00'))
+
+		if os.path.exists(last_release_file):
+			with open(last_release_file, 'r') as f:
+				last_release = json.load(f)
+			last_tag = last_release.get('tag_name', '')
+			last_published_at = last_release.get('published_at', '')
+			if last_published_at:
+				last_time = datetime.datetime.fromisoformat(last_published_at.replace('Z', '+00:00'))
+				if current_time <= last_time and last_tag == release_tag:
+					logging.info(f"No newer release found. Current: {release_tag} ({current_published_at}), Last: {last_tag} ({last_published_at})")
+					return False, None
+		logging.info(f"Newer release detected or no previous download: {release_tag} ({current_published_at})")
+		return True, {'tag_name': release_tag, 'published_at': current_published_at}
+	except urllib.error.URLError as e:
+		logging.error(f"Failed to fetch release info: {e}")
+		raise
+	except json.JSONDecodeError as e:
+		logging.error(f"Failed to parse API JSON: {e}")
+		raise
+	except IOError as e:
+		logging.error(f"Failed to read/write {last_release_file}: {e}")
+		raise
+	except Exception as e:
+		logging.error(f"Unexpected error checking release: {e}")
+		raise
+
 repo_owner = "Reyher-VDI"
 repo_name = "Citrix-RPM-Repository"
 release_tag = "TEST"
+last_release_file = "/temp/packages/last_release.json"
 
-expected_hashes = get_expected_hashes_from_api(repo_owner, repo_name, release_tag)
-if not expected_hashes:
-	raise Exception("Failed to auto-fetch expected hashes from GitHub API. Check logs for details.")
+is_newer, release_info = is_newer_release(repo_owner, repo_name, release_tag, last_release_file)
+if is_newer:
+	expected_hashes = get_expected_hashes_from_api(repo_owner, repo_name, release_tag)
+	if not expected_hashes:
+		raise Exception("Failed to auto-fetch expected hashes from GitHub API. Check logs for details.")
 
-for rpm_file in ["/temp/packages/ctxusb.rpm", "/temp/packages/ICAClient.rpm"]:
-	if os.path.exists(rpm_file):
-		os.remove(rpm_file)
+	for rpm_file in ["/temp/packages/ctxusb.rpm", "/temp/packages/ICAClient.rpm"]:
+		if os.path.exists(rpm_file):
+			os.remove(rpm_file)
 
-download_file("https://github.com/Reyher-VDI/Citrix-RPM-Repository/releases/download/TEST/ctxusb.rpm", "/temp/packages/ctxusb.rpm", expected_hashes)
-download_file("https://github.com/Reyher-VDI/Citrix-RPM-Repository/releases/download/TEST/ICAClient.rpm", "/temp/packages/ICAClient.rpm", expected_hashes)
+	download_file("https://github.com/Reyher-VDI/Citrix-RPM-Repository/releases/download/TEST/ctxusb.rpm", "/temp/packages/ctxusb.rpm", expected_hashes)
+	download_file("https://github.com/Reyher-VDI/Citrix-RPM-Repository/releases/download/TEST/ICAClient.rpm", "/temp/packages/ICAClient.rpm", expected_hashes)
 
-os.makedirs("/var/local/citrix-repo")
+	os.makedirs("/var/local/citrix-repo", exist_ok = True)
+	
+	logging.info("Copying ctxusb.rpm...")
+	shutil.copyfile("/temp/packages/ctxusb.rpm", "/var/local/citrix-repo/ctxusb.rpm")
+	logging.info("Finished copying ctxusb.rpm")
+	
+	logging.info("Copying ICAClient.rpm...")
+	shutil.copyfile("/temp/packages/ICAClient.rpm", "/var/local/citrix-repo/ICAClient.rpm")
+	logging.info("Finished copying ICAClient.rpm")
+	
+	os.system("createrepo_c /var/local/citrix-repo")
+	
+	logging.info("Copying local-citrix-repo.repo...")
+	shutil.copyfile("./local-citrix-repo.repo", "/etc/yum.repos.d/local-citrix-repo.repo")
+	logging.info("Finished copying local-citrix-repo.repo")
+	
+	logging.info("Copying RPM-GPG-KEY-citrix-local...")
+	shutil.copyfile("./RPM-GPG-KEY-citrix-local", "/var/local/citrix-repo/RPM-GPG-KEY-citrix-local")
+	logging.info("Finished copying RPM-GPG-KEY-citrix-local")
 
-logging.info("Copying ctxusb.rpm...")
-shutil.copyfile("/temp/packages/ctxusb.rpm", "/var/local/citrix-repo")
-logging.info("Finished copying ICAClient.rpm")
-logging.info("Copying ICAClient.rpm...")
-shutil.copyfile("/temp/packages/ICAClient.rpm", "/var/local/citrix-repo")
-logging.info("Finished copying ICAClient.rpm")
+	os.system("rpm --import /var/local/citrix-repo/RPM-GPG-KEY-citrix-local")
 
-os.system("createrepo_c /var/local/citrix-repo")
+	os.system("dnf makecache")
+	os.system("pkcon refresh force")
 
-shutil.copyfile("./local-citrix-repo.repo", "/etc/yum.repos.d/")
+	os.makedirs(os.path.dirname(last_release_file), exist_ok=True)
+	with open(last_release_file, 'w') as f:
+		json.dump(release_info, f)
+	logging.info(f"Saved last release info to {last_release_file}")
+else:
+	logging.info("Skipping download; no new release available.")
 
-print("All files downloaded and verified successfully!")
+print("All files processed successfully!")
