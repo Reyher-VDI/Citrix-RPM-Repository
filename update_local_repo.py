@@ -13,9 +13,9 @@ import shutil
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - Thread %(threadName)s - %(message)s')
 
-def get_expected_hashes_from_api(repo_owner, repo_name, release_tag):
+def get_expected_hashes_from_api(repo_owner, repo_name):
 	"""Fetch expected SHA256 hashes directly from GitHub API release assets."""
-	api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/tags/{release_tag}"
+	api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
 	try:
 		with urllib.request.urlopen(api_url, timeout=30) as response:
 			release_info = json.loads(response.read().decode())
@@ -148,7 +148,7 @@ def download_file(url, save_path, expected_hashes, num_threads=4):
 def is_newer_release(repo_owner, repo_name, release_tag, last_release_file="/temp/packages/last_release.json"):
 	"""Check if the current release is newer than the last downloaded one."""
 	try:
-		api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/tags/{release_tag}"
+		api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
 		with urllib.request.urlopen(api_url, timeout=30) as response:
 			release_info = json.loads(response.read().decode())
 		current_published_at = release_info.get('published_at', '')
@@ -185,12 +185,11 @@ def is_newer_release(repo_owner, repo_name, release_tag, last_release_file="/tem
 
 repo_owner = "Reyher-VDI"
 repo_name = "Citrix-RPM-Repository"
-release_tag = "TEST"
 last_release_file = "/temp/packages/last_release.json"
 
-is_newer, release_info = is_newer_release(repo_owner, repo_name, release_tag, last_release_file)
+is_newer, release_info = is_newer_release(repo_owner, repo_name, last_release_file)
 if is_newer:
-	expected_hashes = get_expected_hashes_from_api(repo_owner, repo_name, release_tag)
+	expected_hashes = get_expected_hashes_from_api(repo_owner, repo_name)
 	if not expected_hashes:
 		raise Exception("Failed to auto-fetch expected hashes from GitHub API. Check logs for details.")
 
