@@ -198,8 +198,8 @@ if is_newer:
 		if os.path.exists(rpm_file):
 			os.remove(rpm_file)
 
-	download_file("https://github.com/Reyher-VDI/Citrix-RPM-Repository/releases/download/TEST/ctxusb.rpm", "/temp/packages/ctxusb.rpm", expected_hashes)
-	download_file("https://github.com/Reyher-VDI/Citrix-RPM-Repository/releases/download/TEST/ICAClient.rpm", "/temp/packages/ICAClient.rpm", expected_hashes)
+	download_file("https://github.com/Reyher-VDI/Citrix-RPM-Repository/releases/latest/download/ctxusb.rpm", "/temp/packages/ctxusb.rpm", expected_hashes)
+	download_file("https://github.com/Reyher-VDI/Citrix-RPM-Repository/releases/latest/download/ICAClient.rpm", "/temp/packages/ICAClient.rpm", expected_hashes)
 
 	os.makedirs("/var/local/citrix-repo", exist_ok = True)
 	
